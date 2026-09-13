@@ -165,7 +165,12 @@ def run_abacus(job_paths: Union[str, List[str], Path, List[Path]],
             finally:
                 os.chdir(cwd)
             if return_code != 0:
-                raise RuntimeError(f"ABACUS command failed with error: {err}")
+                log_path = Path(job_path) / log_file
+                raise RuntimeError(
+                    "ABACUS command failed with error: "
+                    f"{err}; command={command_cmd}; returncode={return_code}; "
+                    f"cwd={job_path}; log_file={log_path}"
+                )
     
     elif submit_type == "sidereus":
         # sidereus specialized local submit type
@@ -185,29 +190,12 @@ def run_abacus(job_paths: Union[str, List[str], Path, List[Path]],
                 os.chdir(cwd)
             
             if return_code != 0:
-                # Read the log file to get the error details (tail to avoid reading huge files)
-                error_msg = f"ABACUS command failed with return code {return_code}."
                 log_path = Path(job_path) / log_file
-                if log_path.exists():
-                    try:
-                        with open(log_path, "r", errors='replace') as f:
-                            # Read all lines is risky if file is huge, but usually for error context we need the end.
-                            # Efficiently reading the last N lines of a large file in Python can be complex,
-                            # here we read all but assume reasonable size or accept memory cost only on failure.
-                            # For safety, let's limit the preview size.
-                            f.seek(0, os.SEEK_END)
-                            file_size = f.tell()
-                            # Read last 20KB
-                            read_size = min(file_size, 20480)
-                            f.seek(file_size - read_size)
-                            content = f.read()
-                            error_msg += f"\n--- Last {len(content)} bytes of {log_file} ---\n{content}\n----------------------------------------"
-                    except Exception as e:
-                        error_msg += f"\nFailed to read log file {log_file}: {e}"
-                else:
-                    error_msg += f"\nCould not find log file: {log_path}"
-                
-                raise RuntimeError(error_msg)
+                raise RuntimeError(
+                    "ABACUS command failed with return code "
+                    f"{return_code}; command={command_cmd}; returncode={return_code}; "
+                    f"cwd={job_path}; log_file={log_path}"
+                )
     
     elif submit_type == "bohrium":
         # use abacustest to submit the job to bohrium
