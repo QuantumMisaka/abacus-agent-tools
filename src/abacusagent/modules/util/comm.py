@@ -13,9 +13,10 @@ import glob
 from abacustest.lib_prepare.abacus import ReadInput
 from abacustest.lib_collectdata.collectdata import RESULT
 from abacusagent.modules.util.work_path import (
-    _random_4digit_suffix,
     _slugify_work_note,
     generate_work_path,
+    iter_work_path_names,
+    slugify_work_note,
 )
 
 

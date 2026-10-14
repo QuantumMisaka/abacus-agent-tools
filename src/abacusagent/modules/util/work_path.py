@@ -1,8 +1,17 @@
+"""Shared note-based work-directory naming and allocation."""
+
 import os
 import traceback
+from itertools import count
+from pathlib import Path
+from typing import Iterator
 
 
-def _slugify_work_note(value) -> str:
+def slugify_work_note(value) -> str:
+    """Clean a note to the at-most-64-character directory-name slug.
+
+    An empty return value means the note contains no usable characters.
+    """
     text = "" if value is None else str(value).strip()
     parts = []
     previous_dash = False
@@ -10,53 +19,71 @@ def _slugify_work_note(value) -> str:
         if char.isalnum() or char in "_-":
             parts.append(char)
             previous_dash = False
-        else:
-            if not previous_dash:
-                parts.append("-")
-                previous_dash = True
-    return "".join(parts).strip("-")
+        elif not previous_dash:
+            parts.append("-")
+            previous_dash = True
+    slug = "".join(parts).strip("-")
+    if len(slug) > 64:
+        slug = slug[:64].rstrip("-")
+    return slug
 
 
-def _random_4digit_suffix() -> str:
-    return f"{int.from_bytes(os.urandom(2), 'big') % 10000:04d}"
+# Existing private import path remains available for library callers.
+_slugify_work_note = slugify_work_note
 
 
-def generate_work_path(note=None, fallback_name=None, create: bool = True) -> str:
+def iter_work_path_names(note) -> Iterator[str]:
+    """Yield names for one complete note, without probing or changing the filesystem.
+
+    Names start with the cleaned note and then use the first available ordinal
+    from ``-002`` onward. A numeric tail in the note remains part of the note.
     """
-    Generate a note-aware working directory name.
+    slug = slugify_work_note(note)
+    if not slug:
+        raise ValueError("note slug is empty; provide a note containing letters, numbers, '_' or '-'.")
+    return _iter_names(slug)
 
-    Naming rule: ``<slug>-<4digit>``. The slug comes from ``note`` when
-    provided. Legacy internal callers without ``note`` fall back to
-    ``fallback_name`` or the calling function name.
 
-    Args:
-        note: Human-readable task label used for the directory slug. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
-        fallback_name: Compatibility slug source for internal callers without note.
-        create: Whether to create the returned directory.
+def _iter_names(slug: str) -> Iterator[str]:
+    yield slug
+    for ordinal in count(2):
+        yield f"{slug}-{ordinal:03d}"
 
-    Returns:
-        str: Relative working directory path.
+
+def generate_work_path(
+    note=None, fallback_name=None, create: bool = True, *, parent=None
+) -> str:
+    """Return the first currently free note-based work directory path.
+
+    ``note=None`` keeps the legacy internal fallback to ``fallback_name`` or
+    the direct caller's function name. Existing positional arguments and the
+    default cwd-relative return path remain unchanged. With ``parent`` set,
+    the returned path is joined to that explicit parent; an absolute parent
+    therefore produces an absolute result.
+
+    When ``create=True``, allocation uses atomic ``mkdir`` and retries only
+    name collisions. When ``create=False``, this is a side-effect-free query:
+    the returned candidate is not reserved and may be taken before use.
     """
     if note is None:
         base = fallback_name or traceback.extract_stack(limit=2)[-2].name
     else:
         base = note
 
-    slug = _slugify_work_note(base)
-    if not slug:
-        raise ValueError("note slug is empty; provide a note containing letters, numbers, '_' or '-'.")
-    if len(slug) > 64:
-        slug = slug[:64].rstrip("-")
-
-    for _ in range(100):
-        work_path = f"{slug}-{_random_4digit_suffix()}"
-        if os.path.exists(work_path):
-            continue
+    for name in iter_work_path_names(base):
+        path = name if parent is None else str(Path(parent) / name)
         if create:
             try:
-                os.mkdir(work_path)
+                os.mkdir(path)
             except FileExistsError:
                 continue
-        return work_path
+        else:
+            try:
+                os.lstat(path)
+            except FileNotFoundError:
+                pass
+            else:
+                continue
+        return path
 
-    raise FileExistsError(f"Unable to create a unique work directory for note '{slug}' after 100 attempts.")
+    raise AssertionError("unreachable: work-path names have no ordinal limit")
