@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Literal, Optional,  Dict, Any
+from typing import Callable, Literal, Optional, Dict, Any
 from abacustest.lib_prepare.abacus import ReadInput, WriteInput
 from abacustest.lib_collectdata.collectdata import RESULT
 from abacustest.lib_model.comm import check_abacus_inputs
@@ -18,6 +18,8 @@ def abacus_do_relax(
     relax_method: Optional[Literal["cg", "bfgs", "bfgs_trad", "cg_bfgs", "sd", "fire"]] = None,
     relax_new: Optional[bool] = None,
     note=None,
+    *,
+    before_run: Optional[Callable[[Path], None]] = None,
 ) -> Dict[str, Any]:
     """
     Perform relaxation calculations using ABACUS based on the provided input files. The results of the relaxation and 
@@ -42,6 +44,7 @@ def abacus_do_relax(
         relax_method: The relaxation method to use, can be 'cg', 'bfgs', 'bfgs_trad', 'cg_bfgs', 'sd', or 'fire'. Default is 'cg'.
         relax_new: If use new implemented CG method, default is True.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        before_run: Optional internal check of the final work directory immediately before ABACUS is launched. Its exceptions propagate unchanged.
 
     Returns:
         A dictionary containing:
@@ -81,9 +84,10 @@ def abacus_do_relax(
         When the relaxation is not converged, please try to use other relaxation methods.
     """
     try:
-        is_valid, msg = check_abacus_inputs(abacus_inputs_dir)
-        if not is_valid:
-            raise RuntimeError(f"Invalid ABACUS input files: {msg}")
+        if before_run is None:
+            is_valid, msg = check_abacus_inputs(abacus_inputs_dir)
+            if not is_valid:
+                raise RuntimeError(f"Invalid ABACUS input files: {msg}")
         
         abacus_inputs_dir = Path(abacus_inputs_dir).absolute()
         work_path = Path(generate_work_path(note=note)).absolute()
@@ -101,7 +105,13 @@ def abacus_do_relax(
             relax_method=relax_method,
             relax_new=relax_new,
         )
+    except Exception as e:
+        return {"message": f"Relaxation calculation failed: {e}"}
 
+    if before_run is not None:
+        before_run(work_path)
+
+    try:
         run_abacus(work_path)
 
         results = relax_postprocess(work_path)

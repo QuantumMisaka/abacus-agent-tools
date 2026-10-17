@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Dict, Any, List, Literal
+from typing import Callable, Dict, Any, List, Literal, Optional
 
 import numpy as np
 from ase import Atoms
@@ -98,6 +98,8 @@ def abacus_run_md(
     md_dumpfreq: int = 1,
     md_seed: int = -1,
     note=None,
+    *,
+    before_run: Optional[Callable[[Path], None]] = None,
 ) -> Dict[str, Any]:
     """
     Use ABACUS to do ab-initio molecular dynamics calculation.
@@ -138,6 +140,7 @@ def abacus_run_md(
             - < 0: No srand() function is called.
             - >= 0: The function srand(md_seed) is called.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        before_run: Optional internal check of the final work directory immediately before ABACUS is launched. Its exceptions propagate unchanged.
     Returns:
         A dictionary containing:
             - md_work_path (Path): The working directory of the molecular dynamics calculation.
@@ -147,7 +150,7 @@ def abacus_run_md(
     """
     try:
         work_path = Path(generate_work_path(note=note)).absolute()
-        link_abacusjob(src=abacus_inputs_dir, dst=work_path, copy_files=['INPUT', 'STRU'], exclude_directories=True)
+        link_abacusjob(src=abacus_inputs_dir, dst=work_path, copy_files=['INPUT', 'STRU'])
         input_params = ReadInput(os.path.join(work_path, "INPUT"))
 
         input_params['calculation'] = 'md'
@@ -178,7 +181,13 @@ def abacus_run_md(
             input_params.pop('md_tlast')
 
         WriteInput(input_params, os.path.join(work_path, "INPUT"))
+    except Exception as e:
+        return {"message": f"Error occured during the running md: {e}"}
 
+    if before_run is not None:
+        before_run(work_path)
+
+    try:
         run_abacus(work_path)
 
         metrics = collect_metrics(work_path)
