@@ -53,53 +53,81 @@ def _require_symfc() -> None:
 _SCF_CONVERGED_TOKEN = "charge density convergence is achieved"
 
 
-def _scf_log_converged(path: Path) -> bool:
-    """Return True only when the SCF log proves density convergence.
-
-    ABACUS writes ``abacus.json`` on *normal termination* — including an
-    scf_nmax exhaustion exit — so a marker alone must never count as
-    converged.  A missing or unreadable log fails closed (job recomputed):
-    recomputing one displacement SCF is cheap, collecting unconverged forces
-    silently corrupts FC2/FC3.
-    """
+def _current_scf_log(path: Path) -> tuple[list[str], bool]:
+    """Return the current native invocation and whether the log was appended."""
     log = path / "OUT.ABACUS" / "running_scf.log"
     try:
-        return _SCF_CONVERGED_TOKEN in log.read_text(encoding="utf-8", errors="replace")
+        lines = log.read_text(encoding="utf-8", errors="replace").split("\n")
     except OSError:
-        return False
+        return [], False
+    # Each native ABACUS invocation writes a Start Time line.  A prior
+    # converged run in an appended log must not complete the current one.
+    starts = [i for i, line in enumerate(lines) if re.match(r"\s*Start Time is\b", line)]
+    current = lines[starts[-1]:] if starts else lines
+    return current + [""], len(starts) > 1
 
 
-def _job_is_completed(path: Path) -> bool:
-    """Return True when a displacement job already has a *converged*, collectable result.
+def _scf_log_converged(path: Path) -> bool:
+    """Check density convergence in the current native SCF invocation."""
+    lines, _appended = _current_scf_log(path)
+    return any(_SCF_CONVERGED_TOKEN in line for line in lines)
 
-    Checkpoint-resume treats a job as finished only when its SCF log proves
-    charge-density convergence (see :func:`_scf_log_converged`) AND the
-    directory carries a collectable result: a readable ``abacus.json``
-    completion marker (written by ABACUS on normal termination) or a single
-    SCF frame loadable by dpdata.  The latter also recognizes jobs computed
-    by earlier one-shot runs that only left ``OUT.ABACUS`` behind.  Both
-    signals are only heuristics for skipping SCF compute; the final
-    force/energy collection still enforces the full-displacement cardinality
-    contract.
-    """
-    if not _scf_log_converged(path):
-        return False
-    marker = path / "abacus.json"
-    if marker.is_file():
-        try:
-            json.loads(marker.read_text(encoding="utf-8"))
-            return True
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            pass
-    try:
-        import dpdata
 
+def _single_scf_result(
+    path: Path, *, current_lines: list[str] | None = None, appended: bool | None = None
+) -> tuple[Any, float]:
+    """Load finite E/F from the same SCF invocation."""
+    import dpdata
+    import numpy as np
+
+    if current_lines is None or appended is None:
+        current_lines, appended = _current_scf_log(path)
+    if appended:
+        # dpdata's directory reader independently takes the last energy and
+        # force in the whole file. Parse its current-run lines with the same
+        # low-level reader so an old force cannot pair with a new energy.
+        from dpdata.formats.abacus import scf
+
+        energy, converged = scf.get_energy(current_lines)
+        force = scf.get_force(current_lines, 0)
+        if not converged or energy is None or force is None:
+            raise ValueError("current ABACUS SCF run has no complete energy/force frame")
+        input_lines = (path / "INPUT").read_text(encoding="utf-8").splitlines()
+        stru_path = scf.get_geometry_in(str(path), input_lines)
+        structure = scf.get_frame_from_stru(stru_path)
+        natoms = sum(structure["atom_numbs"])
+        forces = np.asarray(force, dtype=float)[np.newaxis, :, :]
+        energies = np.asarray([energy], dtype=float)
+        if forces.shape[1] != natoms:
+            raise ValueError("current ABACUS SCF force table does not cover every atom")
+    else:
         labelled = dpdata.LabeledSystem(str(path), fmt="abacus/scf")
-        forces = labelled["forces"]
-        energies = labelled["energies"]
-        return len(forces) == 1 and len(energies) == 1
+        forces = np.asarray(labelled["forces"], dtype=float)
+        energies = np.asarray(labelled["energies"], dtype=float)
+    if forces.ndim != 3 or forces.shape[0] != 1 or forces.shape[1] < 1 or forces.shape[2] != 3:
+        raise ValueError("each ABACUS displacement job must contain one (atom, xyz) force frame")
+    if energies.size != 1 or not np.isfinite(forces).all() or not np.isfinite(energies).all():
+        raise ValueError("each ABACUS displacement job must contain one finite energy and finite forces")
+    return forces[0], float(energies.reshape(-1)[0])
+
+
+def displacement_scf_ready(path: Path) -> bool:
+    """Whether a displacement SCF has current-run convergence and finite E/F.
+
+    The SAI array runner calls this same predicate in the computation image.
+    """
+    current_lines, appended = _current_scf_log(path)
+    if not any(_SCF_CONVERGED_TOKEN in line for line in current_lines):
+        return False
+    try:
+        _single_scf_result(path, current_lines=current_lines, appended=appended)
+        return True
     except Exception:
         return False
+
+
+# Preserve callers that imported the earlier private completion helper.
+_job_is_completed = displacement_scf_ready
 
 
 def collect_force_energy_records(
@@ -115,7 +143,6 @@ def collect_force_energy_records(
     force/energy row changes the displacement-to-force mapping and can make a
     formally successful BTE physically meaningless.
     """
-    import dpdata
     import numpy as np
 
     root = work_dir.resolve()
@@ -128,12 +155,11 @@ def collect_force_energy_records(
         if not path.is_dir() or root not in path.parents:
             raise ValueError("displacement jobs must be existing directories contained in work_dir")
         try:
-            labelled = dpdata.LabeledSystem(str(path), fmt="abacus/scf")
-            forces = labelled["forces"]
-            energies = labelled["energies"]
-            if len(forces) != 1 or len(energies) != 1:
-                raise ValueError("each ABACUS displacement job must contain exactly one frame")
-            grouped[kind].append((path, forces[0], energies[0]))
+            current_lines, appended = _current_scf_log(path)
+            if not any(_SCF_CONVERGED_TOKEN in line for line in current_lines):
+                raise ValueError("displacement SCF did not converge in its current run")
+            forces, energy = _single_scf_result(path, current_lines=current_lines, appended=appended)
+            grouped[kind].append((path, forces, energy))
         except Exception as exc:
             raise RuntimeError(f"failed to collect force/energy from displacement job {path}") from exc
 

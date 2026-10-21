@@ -250,8 +250,8 @@ def abacus_phonon_dispersion(
             Default is None. If None, will use automatically generated high symmetry points.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
         work_path (str or Path, optional): Existing phonon work directory to resume. When given, the directory is
-            reused as-is (no fresh directory is minted) and displacement jobs that already carry a completion
-            marker (a valid ``abacus.json`` or a dpdata-loadable SCF frame) are skipped instead of recomputed.
+            reused as-is (no fresh directory is minted); jobs with a converged SCF log and
+            one finite energy/force frame are skipped instead of recomputed.
             Default is None, which keeps the historical behavior of generating a fresh work directory.
     Returns:
         A dictionary containing:
