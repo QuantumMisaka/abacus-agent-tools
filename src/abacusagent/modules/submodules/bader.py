@@ -17,7 +17,7 @@ from pymatgen.core.periodic_table import Element
 from abacustest.lib_prepare.abacus import ReadInput, WriteInput, AbacusStru
 from abacustest.lib_model.comm import check_abacus_inputs
 
-from abacusagent.modules.util.comm import run_abacus, link_abacusjob, generate_work_path, run_command, has_chgfile,collect_metrics
+from abacusagent.modules.util.comm import allocate_work_path, run_abacus, link_abacusjob, generate_work_path, run_command, has_chgfile,collect_metrics
 from abacusagent.modules.util.cube_manipulator import read_gaussian_cube
 
 BADER_EXE = os.environ.get("BADER_EXE", "bader") # use environment variable to specify the bader executable path
@@ -88,6 +88,7 @@ def ver_cmp(v1: str|tuple[int], v2: str|tuple[int]) -> int:
 def calculate_charge_densities_with_abacus(
     abacus_inputs_dir: Path,
     note=None,
+    work_parent=None,
 ) -> Optional[List[str]]:
     """
     Calculate the charge density using ABACUS in the specified job directory.
@@ -100,7 +101,7 @@ def calculate_charge_densities_with_abacus(
     list: List of file names for the charge density cube files.
     """
     # get the abacus version with `abacus --version`
-    work_path = generate_work_path(note=note)
+    work_path = str(allocate_work_path(note=note, work_parent=work_parent))
     link_abacusjob(src=abacus_inputs_dir,
                    dst=work_path,
                    copy_files=["INPUT"])

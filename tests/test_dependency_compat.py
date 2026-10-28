@@ -144,8 +144,17 @@ def test_jdos_submodule_accepts_and_forwards_note(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_property_calculation_scf(abacus_inputs_path, mode, note=None):
-        calls.append({"path": abacus_inputs_path, "mode": mode, "note": note})
+    def fake_property_calculation_scf(
+        abacus_inputs_path, mode, note=None, work_parent=None
+    ):
+        calls.append(
+            {
+                "path": abacus_inputs_path,
+                "mode": mode,
+                "note": note,
+                "work_parent": work_parent,
+            }
+        )
         work_path = tmp_path / "jdos-work"
         (work_path / "pyatb" / "Out" / "JDOS").mkdir(parents=True)
         (work_path / "pyatb" / "Out" / "JDOS" / "JDOS.dat").write_text(
@@ -160,7 +169,14 @@ def test_jdos_submodule_accepts_and_forwards_note(monkeypatch, tmp_path):
 
     result = jdos_pyatb.pyatb_calculate_jdos(tmp_path / "inputs", note="Fe-jdos")
 
-    assert calls == [{"path": tmp_path / "inputs", "mode": "pyatb", "note": "Fe-jdos"}]
+    assert calls == [
+        {
+            "path": tmp_path / "inputs",
+            "mode": "pyatb",
+            "note": "Fe-jdos",
+            "work_parent": None,
+        }
+    ]
     assert result["jdos_fig_path"].name == "jdos.png"
     assert result["jdos_data_path"] == (tmp_path / "jdos-work" / "pyatb" / "Out" / "JDOS" / "JDOS.dat").absolute()
 
@@ -397,7 +413,11 @@ def test_work_function_forwards_abacustest_0461_options(monkeypatch, tmp_path):
     calls = {}
 
     monkeypatch.setattr(work_function_module, "check_abacus_inputs", lambda path: (True, "ok"))
-    monkeypatch.setattr(work_function_module, "generate_work_path", lambda note=None: tmp_path / "work")
+    monkeypatch.setattr(
+        work_function_module,
+        "allocate_work_path",
+        lambda note=None, work_parent=None: tmp_path / "work",
+    )
     monkeypatch.setattr(
         work_function_module,
         "link_abacusjob",
@@ -540,7 +560,11 @@ def test_work_function_auto_vacuum_resolves_to_letter_before_abacustest(monkeypa
     calls = {}
 
     monkeypatch.setattr(work_function_module, "check_abacus_inputs", lambda path: (True, "ok"))
-    monkeypatch.setattr(work_function_module, "generate_work_path", lambda note=None: tmp_path / "work")
+    monkeypatch.setattr(
+        work_function_module,
+        "allocate_work_path",
+        lambda note=None, work_parent=None: tmp_path / "work",
+    )
     monkeypatch.setattr(
         work_function_module,
         "link_abacusjob",

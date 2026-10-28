@@ -114,3 +114,115 @@ def test_property_scf_uses_work_parent(tmp_path: Path, monkeypatch):
 
     assert result["work_path"] == parent.resolve() / "band"
     assert (parent / "band" / "INPUT").is_file()
+
+
+class _StageSentinel(RuntimeError):
+    pass
+
+
+def _run_stage_under_parent(monkeypatch, module, call, parent) -> Path:
+    """Run ``call`` with a recording link step and stop right after allocation."""
+
+    recorded: dict[str, Path] = {}
+
+    def fake_link(*, src, dst, copy_files=(), **_kwargs):
+        recorded.setdefault("dst", Path(dst))
+        Path(dst).mkdir(parents=True, exist_ok=True)
+        for name in copy_files:
+            source = Path(src) / name
+            if source.is_file():
+                shutil.copy2(source, Path(dst) / name)
+
+    def fake_run(*_args, **_kwargs):
+        raise _StageSentinel("allocated")
+
+    monkeypatch.setattr(module, "link_abacusjob", fake_link)
+    monkeypatch.setattr(module, "run_abacus", fake_run)
+    # These property backends convert failures into a ``message`` payload, so
+    # the recorded allocation is the observable proof of placement.
+    try:
+        call()
+    except _StageSentinel:
+        pass
+    return recorded["dst"]
+
+
+@pytest.mark.parametrize(
+    ("function", "extra_kwargs"),
+    [
+        ("abacus_cal_elf", {}),
+        ("abacus_cal_charge_density_difference", {"subsys1_atom_index": [1]}),
+        ("abacus_cal_spin_density", {}),
+    ],
+)
+def test_cube_property_stages_use_work_parent(tmp_path, monkeypatch, function, extra_kwargs):
+    from abacusagent.modules.submodules import cube
+
+    inputs = _write_inputs(tmp_path / "inputs")
+    parent = tmp_path / "GaN" / "PBE_elf_run"
+    monkeypatch.setattr(cube, "check_abacus_inputs", lambda _p: (True, ""))
+    call = lambda: getattr(cube, function)(
+        inputs, note="stage", work_parent=parent, **extra_kwargs
+    )
+
+    _run_stage_under_parent(monkeypatch, cube, call, parent)
+
+    stages = [path for path in parent.iterdir() if path.is_dir()]
+    assert [path.name for path in stages] == ["stage"]
+
+
+def test_work_function_stage_uses_work_parent(tmp_path, monkeypatch):
+    from abacusagent.modules.submodules import work_function
+
+    inputs = _write_inputs(tmp_path / "inputs")
+    parent = tmp_path / "GaN" / "PBE_work_function_run"
+    monkeypatch.setattr(work_function, "check_abacus_inputs", lambda _p: (True, ""))
+    call = lambda: work_function.abacus_cal_work_function(
+        inputs, vacuum_direction="c", note="stage", work_parent=parent
+    )
+
+    allocated = _run_stage_under_parent(monkeypatch, work_function, call, parent)
+
+    assert allocated.parent == parent.resolve()
+    assert allocated.name.startswith("stage")
+
+
+def test_bader_charge_density_stage_uses_work_parent(tmp_path, monkeypatch):
+    from abacusagent.modules.submodules import bader
+
+    inputs = _write_inputs(tmp_path / "inputs")
+    parent = tmp_path / "GaN" / "PBE_bader_run"
+    call = lambda: bader.calculate_charge_densities_with_abacus(
+        inputs, note="stage", work_parent=parent
+    )
+
+    allocated = _run_stage_under_parent(monkeypatch, bader, call, parent)
+
+    assert allocated.parent == parent.resolve()
+    assert allocated.name.startswith("stage")
+
+
+def test_jdos_forwards_work_parent_to_property_scf(tmp_path, monkeypatch):
+    from abacusagent.modules.submodules import jdos_pyatb
+
+    inputs = _write_inputs(tmp_path / "inputs")
+    parent = tmp_path / "GaN" / "PBE_jdos_run"
+    captured: dict[str, object] = {}
+
+    def fake_property_scf(path, *, mode, note, work_parent):
+        captured.update(
+            {"path": path, "mode": mode, "note": note, "work_parent": work_parent}
+        )
+        raise _StageSentinel("allocated")
+
+    monkeypatch.setattr(jdos_pyatb, "property_calculation_scf", fake_property_scf)
+
+    with pytest.raises(_StageSentinel):
+        jdos_pyatb.pyatb_calculate_jdos(inputs, note="stage", work_parent=parent)
+
+    assert captured == {
+        "path": inputs,
+        "mode": "pyatb",
+        "note": "stage",
+        "work_parent": parent,
+    }

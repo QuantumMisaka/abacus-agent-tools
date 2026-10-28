@@ -6,7 +6,7 @@ from abacustest import AbacusSTRU
 from abacustest.lib_model.comm import check_abacus_inputs, get_largest_vacuum_dir
 from abacustest.lib_model.model_020_workfunc import prep_abacus_workfunc_calc, post_workfunc_calc
 
-from abacusagent.modules.util.comm import run_abacus, generate_work_path, link_abacusjob
+from abacusagent.modules.util.comm import allocate_work_path, run_abacus, link_abacusjob
 
 VacuumDirection = Literal['a', 'b', 'c', 'x', 'y', 'z', 'auto']
 
@@ -54,6 +54,7 @@ def abacus_cal_work_function(
     empty_atom_height: float = 2.0,
     empty_atom_dist: float = 2.0,
     note=None,
+    work_parent=None,
 ) -> Dict[str, Any]:
     """
     Calculate the electrostatic potential and work function using ABACUS.
@@ -87,7 +88,7 @@ def abacus_cal_work_function(
             raise RuntimeError(f"Invalid ABACUS input files: {msg}")
         normalized_vacuum_direction = _normalize_vacuum_direction(vacuum_direction)
         
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         link_abacusjob(src=abacus_inputs_dir,dst=work_path,copy_files=["INPUT", "STRU"], exclude_directories=True)
         if normalized_vacuum_direction == "auto":
             normalized_vacuum_direction = _resolve_auto_vacuum_direction(work_path / "STRU")

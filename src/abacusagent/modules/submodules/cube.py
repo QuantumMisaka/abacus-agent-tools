@@ -11,10 +11,10 @@ from abacustest import AbacusSTRU
 from abacustest.lib_prepare.abacus import ReadInput, WriteInput
 from abacustest.lib_model.comm import check_abacus_inputs
 
-from abacusagent.modules.util.comm import run_abacus, generate_work_path, link_abacusjob
+from abacusagent.modules.util.comm import allocate_work_path, run_abacus, link_abacusjob
 from abacusagent.modules.util.cube_manipulator import read_gaussian_cube, axpy, write_gaussian_cube
 
-def abacus_cal_elf(abacus_inputs_dir: Path, note=None):
+def abacus_cal_elf(abacus_inputs_dir: Path, note=None, work_parent=None):
     """
     Calculate electron localization function (ELF) using ABACUS.
     
@@ -36,7 +36,7 @@ def abacus_cal_elf(abacus_inputs_dir: Path, note=None):
         if not is_valid:
             raise RuntimeError(f"Invalid ABACUS input files: {msg}")
         
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         link_abacusjob(src=abacus_inputs_dir, dst=work_path, copy_files=["INPUT"])
 
         input_params = ReadInput(os.path.join(work_path, "INPUT"))
@@ -85,6 +85,7 @@ def abacus_cal_charge_density_difference(
     abacus_inputs_dir: Path,
     subsys1_atom_index: Optional[List[int]] = [1],
     note=None,
+    work_parent=None,
 ) -> Dict[str, Any]:
     """
     Calculate charge density difference using ABACUS.
@@ -111,7 +112,7 @@ def abacus_cal_charge_density_difference(
         for i in range(len(subsys1_atom_index)):
             subsys1_atom_index[i] -= 1 # Convert to 0-based indexing
 
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         full_system_jobpath = os.path.join(work_path, "full_system")
         subsys1_jobpath = os.path.join(work_path, 'subsys1')
         subsys2_jobpath = os.path.join(work_path, 'subsys2')
@@ -171,6 +172,7 @@ def abacus_cal_charge_density_difference(
 def abacus_cal_spin_density(
     abacus_inputs_dir: Path,
     note=None,
+    work_parent=None,
 ) -> Dict[str, Any]:
     """
     Calculate the spin density for collinear spin-polarized system (nspin=2).
@@ -192,7 +194,7 @@ def abacus_cal_spin_density(
         if not is_valid:
             raise RuntimeError(f"Invalid ABACUS input files: {msg}")
         
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         link_abacusjob(src=abacus_inputs_dir,dst=work_path,copy_files=["INPUT", "STRU"], exclude_directories=True)
         input_params = ReadInput(os.path.join(work_path, 'INPUT'))
         if input_params.get('nspin', 1) not in [2]:
