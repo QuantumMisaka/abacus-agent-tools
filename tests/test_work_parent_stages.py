@@ -226,3 +226,38 @@ def test_jdos_forwards_work_parent_to_property_scf(tmp_path, monkeypatch):
         "note": "stage",
         "work_parent": parent,
     }
+
+
+def test_allocate_work_path_without_note_keeps_backend_fallback_name(tmp_path, monkeypatch):
+    """note=None 时保持历史命名：目录名来自后端函数，而不是分配器。"""
+
+    from abacusagent.modules.util.work_path import allocate_work_path
+
+    monkeypatch.chdir(tmp_path)
+
+    def abacus_cal_elf_stage():
+        return allocate_work_path()
+
+    def calculate_charge_density_stage():
+        return allocate_work_path()
+
+    first = abacus_cal_elf_stage()
+    second = calculate_charge_density_stage()
+
+    assert first.name == "abacus_cal_elf_stage"
+    assert second.name == "calculate_charge_density_stage"
+    assert first.parent == second.parent == tmp_path.resolve()
+
+
+def test_allocate_work_path_without_note_still_uses_parent(tmp_path):
+    from abacusagent.modules.util.work_path import allocate_work_path
+
+    parent = tmp_path / "GaN"
+
+    def work_function_stage():
+        return allocate_work_path(work_parent=parent)
+
+    allocated = work_function_stage()
+
+    assert allocated.parent == parent.resolve()
+    assert allocated.name == "work_function_stage"

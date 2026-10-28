@@ -89,20 +89,32 @@ def generate_work_path(
     raise AssertionError("unreachable: work-path names have no ordinal limit")
 
 
-def allocate_work_path(note=None, *, work_parent=None) -> Path:
+def allocate_work_path(note=None, *, work_parent=None, fallback_name=None) -> Path:
     """Allocate one absolute note-based work directory under an optional parent.
 
     ``work_parent=None`` keeps the historical cwd-relative allocation.  With a
     parent, the parent is created if needed and the allocator reserves the
     first free note name directly inside it.  Callers should pass the resolved
     task/project parent rather than changing the process cwd.
+
+    ``note=None`` keeps the legacy fallback naming: the *caller of this
+    function* (for example ``abacus_cal_elf``) names the directory, not this
+    allocator.  An explicit ``fallback_name`` overrides that detection.
     """
 
+    if note is None and fallback_name is None:
+        # ``generate_work_path`` would otherwise name the directory after this
+        # helper, because it inspects its own caller's frame.
+        fallback_name = traceback.extract_stack(limit=2)[-2].name
     if work_parent is None:
-        return Path(generate_work_path(note=note)).absolute()
+        return Path(
+            generate_work_path(note=note, fallback_name=fallback_name)
+        ).absolute()
     parent = Path(work_parent).expanduser().resolve()
     parent.mkdir(parents=True, exist_ok=True)
-    return Path(generate_work_path(note=note, parent=parent)).absolute()
+    return Path(
+        generate_work_path(note=note, fallback_name=fallback_name, parent=parent)
+    ).absolute()
 
 
 def generate_stage_path(
