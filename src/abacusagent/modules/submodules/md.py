@@ -7,7 +7,7 @@ from ase import Atoms
 from ase.io.trajectory import TrajectoryWriter
 from abacustest.lib_prepare.abacus import ReadInput, WriteInput, AbacusStru
 
-from abacusagent.modules.util.comm import generate_work_path, link_abacusjob, run_abacus, collect_metrics
+from abacusagent.modules.util.comm import allocate_work_path, link_abacusjob, run_abacus, collect_metrics
 
 
 def get_last_md_stru(md_stru_outputdir: Path) -> Path:
@@ -99,6 +99,7 @@ def abacus_run_md(
     md_seed: int = -1,
     note=None,
     *,
+    work_parent: Optional[Path] = None,
     before_run: Optional[Callable[[Path], None]] = None,
 ) -> Dict[str, Any]:
     """
@@ -140,6 +141,8 @@ def abacus_run_md(
             - < 0: No srand() function is called.
             - >= 0: The function srand(md_seed) is called.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the generated work directory.
+            When omitted, the historical cwd-relative allocation is kept.
         before_run: Optional internal check of the final work directory immediately before ABACUS is launched. Its exceptions propagate unchanged.
     Returns:
         A dictionary containing:
@@ -149,7 +152,7 @@ def abacus_run_md(
             - normal_end (bool): Whether the ab-initio molecular dynamics calculation ended normally.
     """
     try:
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         link_abacusjob(src=abacus_inputs_dir, dst=work_path, copy_files=['INPUT', 'STRU'])
         input_params = ReadInput(os.path.join(work_path, "INPUT"))
 

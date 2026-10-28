@@ -36,6 +36,32 @@ def test_comm_reexports_public_naming_contract():
     assert comm.slugify_work_note is work_path.slugify_work_note
     assert comm.iter_work_path_names is work_path.iter_work_path_names
     assert comm.generate_work_path is work_path.generate_work_path
+    assert comm.allocate_work_path is work_path.allocate_work_path
+
+
+def test_allocate_work_path_uses_explicit_parent_and_avoids_collision(tmp_path):
+    parent = tmp_path / "project" / "GaN"
+    parent.mkdir(parents=True)
+    (parent / "PBE_run").mkdir()
+    cwd_before = Path.cwd()
+
+    path = work_path.allocate_work_path("PBE_run", work_parent=parent)
+
+    assert path == (parent / "PBE_run-002").resolve()
+    assert path.is_dir()
+    assert Path.cwd() == cwd_before
+    assert not (tmp_path / "PBE_run").exists()
+
+
+def test_allocate_work_path_keeps_legacy_cwd_when_parent_omitted(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+
+    path = work_path.allocate_work_path("PBE_run")
+
+    assert path == (tmp_path / "PBE_run").resolve()
+    assert path.is_dir()
 
 
 def test_first_free_name_is_created_and_existing_results_are_untouched(tmp_path):

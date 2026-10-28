@@ -3,14 +3,14 @@ import numbers
 import os
 import shutil
 from pathlib import Path
-from typing import Literal, List
+from typing import Literal, List, Optional
 import copy
 import numpy as np
 from abacustest.lib_prepare.abacus import AbacusStru, ReadInput, WriteInput
 from abacustest.lib_model.comm_eos import eos_fit
 from abacustest.lib_model.comm import check_abacus_inputs
 
-from abacusagent.modules.util.comm import run_abacus, link_abacusjob, generate_work_path, collect_metrics
+from abacusagent.modules.util.comm import run_abacus, link_abacusjob, allocate_work_path, collect_metrics
 
 
 def _read_eos_stru(path):
@@ -136,6 +136,7 @@ def abacus_eos(
     stru_scale_number: int = 3,
     scale_stepsize: float = 0.02,
     note=None,
+    work_parent: Optional[Path] = None,
 ):
     """
     Use Birch-Murnaghan equation of state (EOS) to calculate the EOS data. The
@@ -154,6 +155,8 @@ def abacus_eos(
             default 0.02 samples 2% increments on each side of the original
             cell.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the generated work directory.
+            When omitted, the historical cwd-relative allocation is kept.
 
     Returns:
         Dict[str, Any]: A dictionary containing EOS calculation results:
@@ -176,7 +179,7 @@ def abacus_eos(
         if not is_valid:
             raise RuntimeError(f"Invalid ABACUS input files: {msg}")
 
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         failure_stage = "input preparation"
 
         input_params = ReadInput(os.path.join(abacus_inputs_dir, "INPUT"))

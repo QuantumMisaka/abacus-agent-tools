@@ -2,7 +2,7 @@
 Calculating elastic constants using ABACUS.
 """
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 from pathlib import Path
 
 import numpy as np
@@ -15,7 +15,7 @@ from pymatgen.analysis.elasticity.stress import Stress
 from abacustest.lib_prepare.comm import kspacing2kpt
 from abacustest.lib_prepare.abacus import AbacusStru, ReadInput, WriteKpt, WriteInput
 from abacustest.lib_model.comm import check_abacus_inputs
-from abacusagent.modules.util.comm import run_abacus, link_abacusjob, generate_work_path, collect_metrics
+from abacusagent.modules.util.comm import run_abacus, link_abacusjob, allocate_work_path, collect_metrics
 
 def prepare_deformed_stru(
     input_stru_dir: Path,
@@ -88,6 +88,7 @@ def abacus_cal_elastic(
     kspacing: float = 0.08,
     relax_force_thr_ev: float = 0.01,
     note=None,
+    work_parent: Optional[Path] = None,
 ) -> Dict[str, float]:
     """
     Calculate various elastic constants for a given structure using ABACUS. 
@@ -98,6 +99,8 @@ def abacus_cal_elastic(
         kspacing (float): K-point spacing for ABACUS calculation, default is 0.08. Units in Bohr^{-1}.
         relax_force_thr_ev (float): Threshold for force convergence of the relax calculation for each deformed structure, default is 0.02. Units in eV/Angstrom.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the generated work directory.
+            When omitted, the historical cwd-relative allocation is kept.
     Returns:
         A dictionary containing the following keys:
         - elastic_cal_dir (Path): Work path of running abacus_cal_elastic. 
@@ -115,7 +118,7 @@ def abacus_cal_elastic(
             raise RuntimeError(f"Invalid ABACUS input files: {msg}")
         
         abacus_inputs_dir = Path(abacus_inputs_dir).absolute()
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         input_stru_dir = Path(os.path.join(work_path, "input_stru")).absolute()
 
         link_abacusjob(src=abacus_inputs_dir,

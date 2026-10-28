@@ -15,7 +15,7 @@ from abacustest.lib_prepare.abacus import ReadInput, WriteInput, AbacusStru
 from abacustest.lib_model.comm import check_abacus_inputs
 
 from abacusagent.constant import THZ_TO_K
-from abacusagent.modules.util.comm import run_abacus, generate_work_path, link_abacusjob, collect_metrics
+from abacusagent.modules.util.comm import run_abacus, allocate_work_path, link_abacusjob, collect_metrics
 # Single source of truth for the completion predicate lives in the phono3py
 # closure (checkpoint-resume); reuse it so both phonon routes share semantics.
 from abacusagent.modules.submodules.phono3py import _job_is_completed
@@ -227,6 +227,7 @@ def abacus_phonon_dispersion(
     high_symm_points: Optional[Dict[str, List[float]]] = None,
     note=None,
     work_path: Optional[Union[str, Path]] = None,
+    work_parent: Optional[Union[str, Path]] = None,
 ):
     """
     Calculate phonon dispersion with finite-difference method using Phonopy with ABACUS as the calculator. 
@@ -253,6 +254,8 @@ def abacus_phonon_dispersion(
             reused as-is (no fresh directory is minted); jobs with a converged SCF log and
             one finite energy/force frame are skipped instead of recomputed.
             Default is None, which keeps the historical behavior of generating a fresh work directory.
+        work_parent (str or Path, optional): Explicit parent for a fresh phonon work directory.
+            Ignored when ``work_path`` is provided. Default None keeps cwd-relative allocation.
     Returns:
         A dictionary containing:
             - phonon_work_path: Path to the directory containing phonon calculation results.
@@ -269,7 +272,7 @@ def abacus_phonon_dispersion(
             raise RuntimeError(f"Invalid ABACUS input files: {msg}")
         
         if work_path is None:
-            work_path = Path(generate_work_path(note=note)).absolute()
+            work_path = allocate_work_path(note=note, work_parent=work_parent)
         else:
             # Checkpoint-resume: reuse the injected directory as-is.
             work_path = Path(work_path).absolute()

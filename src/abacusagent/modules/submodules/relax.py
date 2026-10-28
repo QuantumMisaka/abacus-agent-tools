@@ -5,7 +5,7 @@ from abacustest.lib_prepare.abacus import ReadInput, WriteInput
 from abacustest.lib_collectdata.collectdata import RESULT
 from abacustest.lib_model.comm import check_abacus_inputs
 
-from abacusagent.modules.util.comm import run_abacus, link_abacusjob, generate_work_path, collect_metrics
+from abacusagent.modules.util.comm import run_abacus, link_abacusjob, allocate_work_path, collect_metrics
 
 
 def abacus_do_relax(
@@ -19,6 +19,7 @@ def abacus_do_relax(
     relax_new: Optional[bool] = None,
     note=None,
     *,
+    work_parent: Optional[Path] = None,
     before_run: Optional[Callable[[Path], None]] = None,
 ) -> Dict[str, Any]:
     """
@@ -44,6 +45,9 @@ def abacus_do_relax(
         relax_method: The relaxation method to use, can be 'cg', 'bfgs', 'bfgs_trad', 'cg_bfgs', 'sd', or 'fire'. Default is 'cg'.
         relax_new: If use new implemented CG method, default is True.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for generated work and handoff
+            directories. When omitted, the historical cwd-relative allocation
+            is kept.
         before_run: Optional internal check of the final work directory immediately before ABACUS is launched. Its exceptions propagate unchanged.
 
     Returns:
@@ -90,7 +94,7 @@ def abacus_do_relax(
                 raise RuntimeError(f"Invalid ABACUS input files: {msg}")
         
         abacus_inputs_dir = Path(abacus_inputs_dir).absolute()
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         link_abacusjob(src=abacus_inputs_dir,
                        dst=work_path,
                        copy_files=["INPUT", "STRU", "KPT"])
@@ -128,6 +132,7 @@ def abacus_do_relax(
             new_abacus_inputs_dir = abacus_prepare_inputs_from_relax_results(
                 work_path,
                 note=handoff_note,
+                work_parent=work_parent,
             )['job_path']
             outputs["new_abacus_inputs_dir"] = Path(
                 new_abacus_inputs_dir
@@ -140,6 +145,8 @@ def abacus_do_relax(
 def abacus_prepare_inputs_from_relax_results(
     relax_jobpath: Path,
     note=None,
+    *,
+    work_parent: Optional[Path] = None,
 )-> Dict[str, Any]:
     """
     Prepare ABACUS input files based on the structure of the last relaxation step.
@@ -164,7 +171,7 @@ def abacus_prepare_inputs_from_relax_results(
             raise FileNotFoundError(f"We can not find the structure file of last relax step {final_stru}. \
                 Please check the path and ensure the relaxation calculation has completed successfully.")
 
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
 
         link_abacusjob(
             src=relax_jobpath,

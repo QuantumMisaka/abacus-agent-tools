@@ -21,19 +21,19 @@ def test_relax_handoff_directory_inherits_parent_note_only_when_converged(
     generated_notes = []
     prepared_notes = []
 
-    def fake_generate_work_path(*, note):
+    def fake_generate_work_path(*, note, work_parent=None):
         generated_notes.append(note)
         work = tmp_path / "H2O_relax-1731"
         work.mkdir(exist_ok=True)
         return work
 
-    def fake_prepare(relax_jobpath, note=None):
+    def fake_prepare(relax_jobpath, note=None, *, work_parent=None):
         prepared_notes.append((Path(relax_jobpath), note))
         handoff.mkdir()
         return {"job_path": handoff}
 
     monkeypatch.setattr(relax, "check_abacus_inputs", lambda _path: (True, ""))
-    monkeypatch.setattr(relax, "generate_work_path", fake_generate_work_path)
+    monkeypatch.setattr(relax, "allocate_work_path", fake_generate_work_path)
     monkeypatch.setattr(relax, "link_abacusjob", lambda **_kwargs: None)
     monkeypatch.setattr(relax, "prepare_relax_inputs", lambda **_kwargs: None)
     monkeypatch.setattr(relax, "run_abacus", lambda _path: None)

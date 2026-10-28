@@ -3,14 +3,15 @@ from pathlib import Path
 from abacustest.lib_model.comm import check_abacus_inputs
 from abacustest.lib_model.model_019_vibration import prepare_abacus_vibration_analysis, post_abacus_vibration_analysis_onejob
 
-from abacusagent.modules.util.comm import generate_work_path, link_abacusjob, run_abacus
+from abacusagent.modules.util.comm import allocate_work_path, link_abacusjob, run_abacus
 
 
 def abacus_vibration_analysis(abacus_inputs_dir: Path,
                               selected_atoms: Optional[List[int]] = None,
                               stepsize: float = 0.01,
                               temperature: Optional[float] = 298.15,
-                              note=None):
+                              note=None,
+                              work_parent: Optional[Path] = None):
     """
     Performing vibrational analysis using finite displacement method.
     This tool function is usually followed by a relax calculation (`calculation` is set to `relax`).
@@ -22,6 +23,8 @@ def abacus_vibration_analysis(abacus_inputs_dir: Path,
             Units in Angstrom. The default value (0.01 Angstrom) is generally OK.
         temperature (float): Temperature used to calculate thermodynamic quantities. Units in Kelvin.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the generated work directory.
+            When omitted, the historical cwd-relative allocation is kept.
     Returns:
         A dictionary containing the following keys:
         - 'frequencies': List of real frequencies from vibrational analysis. Imaginary frequencies are represented by negative 
@@ -43,7 +46,7 @@ def abacus_vibration_analysis(abacus_inputs_dir: Path,
         if stepsize <= 0:
             raise ValueError("stepsize should be positive.")
         
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = allocate_work_path(note=note, work_parent=work_parent)
         link_abacusjob(src=abacus_inputs_dir,
                        dst=work_path,
                        copy_files=["INPUT", "STRU", "KPT"],

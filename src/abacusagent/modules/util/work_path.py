@@ -89,6 +89,22 @@ def generate_work_path(
     raise AssertionError("unreachable: work-path names have no ordinal limit")
 
 
+def allocate_work_path(note=None, *, work_parent=None) -> Path:
+    """Allocate one absolute note-based work directory under an optional parent.
+
+    ``work_parent=None`` keeps the historical cwd-relative allocation.  With a
+    parent, the parent is created if needed and the allocator reserves the
+    first free note name directly inside it.  Callers should pass the resolved
+    task/project parent rather than changing the process cwd.
+    """
+
+    if work_parent is None:
+        return Path(generate_work_path(note=note)).absolute()
+    parent = Path(work_parent).expanduser().resolve()
+    parent.mkdir(parents=True, exist_ok=True)
+    return Path(generate_work_path(note=note, parent=parent)).absolute()
+
+
 def generate_stage_path(
     stage: str,
     *,
