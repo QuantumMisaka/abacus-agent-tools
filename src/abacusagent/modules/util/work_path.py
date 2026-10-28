@@ -87,3 +87,25 @@ def generate_work_path(
         return path
 
     raise AssertionError("unreachable: work-path names have no ordinal limit")
+
+
+def generate_stage_path(
+    stage: str,
+    *,
+    parent=None,
+    fallback_note=None,
+) -> str:
+    """Allocate a purpose-named stage under an explicit work parent.
+
+    With ``parent`` set, the library owns the stage name and creates it below
+    the caller-selected directory.  Without a parent, the historical
+    ``fallback_note`` allocation is preserved for backward-compatible callers.
+    """
+
+    if parent is None:
+        return generate_work_path(note=fallback_note)
+    if not stage or not str(stage).strip():
+        raise ValueError("stage name must be non-empty when parent is provided")
+    parent_path = Path(parent).expanduser().resolve()
+    parent_path.mkdir(parents=True, exist_ok=True)
+    return generate_work_path(note=stage, parent=parent_path)

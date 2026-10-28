@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Literal, Optional, Tuple
 
 from abacusagent.modules.util.comm import (
+    generate_stage_path,
     generate_work_path,
     link_abacusjob,
     run_abacus,
@@ -31,6 +32,7 @@ def abacus_dos_run(
     dos_emin_ev: float = -10.0,
     dos_emax_ev: float = 10.0,
     note=None,
+    work_parent: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Run the DOS and PDOS calculation.
 
@@ -52,6 +54,9 @@ def abacus_dos_run(
         dos_emin_ev: Minimal range for Density of States (DOS) in eV. Default is -10.0.
         dos_emax_ev: Maximal range for Density of States (DOS) in eV. Default is 10.0.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for purpose-named stages
+            (``scf``, ``nscf``, ``postprocess``). When omitted, the historical
+            ``note``-derived names are retained.
 
     Returns:
         Dict[str, Any]: A dictionary containing:
@@ -81,16 +86,29 @@ def abacus_dos_run(
             )
         
         print("Performing SCF calculation...")
-        metrics_scf = abacus_dos_run_scf(abacus_inputs_dir, note=note)
-
-        print("Performing NSCF calculation...")
-        metrics_nscf = abacus_dos_run_nscf(
-            metrics_scf["scf_work_path"],
-            dos_edelta_ev=dos_edelta_ev,
-            dos_sigma=dos_sigma,
-            note=note,
+        stage_kwargs = {"note": note}
+        if work_parent is not None:
+            stage_kwargs["work_parent"] = work_parent
+        metrics_scf = abacus_dos_run_scf(
+            abacus_inputs_dir, **stage_kwargs
         )
 
+        print("Performing NSCF calculation...")
+        nscf_kwargs = {
+            "dos_edelta_ev": dos_edelta_ev,
+            "dos_sigma": dos_sigma,
+            "note": note,
+        }
+        if work_parent is not None:
+            nscf_kwargs["work_parent"] = work_parent
+        metrics_nscf = abacus_dos_run_nscf(
+            metrics_scf["scf_work_path"],
+            **nscf_kwargs,
+        )
+
+        plot_kwargs = {"note": note}
+        if work_parent is not None:
+            plot_kwargs["work_parent"] = work_parent
         fig_paths, dos_pdos_data_paths = plot_write_dos_pdos(
             metrics_scf["scf_work_path"],
             metrics_nscf["nscf_work_path"],
@@ -98,7 +116,7 @@ def abacus_dos_run(
             pdos_atom_indices,
             dos_emin_ev,
             dos_emax_ev,
-            note=note,
+            **plot_kwargs,
         )
 
         return_dict = {"dos_fig_path": fig_paths[0], "postprocess_work_path": Path(fig_paths[0]).parent.absolute()}
@@ -121,7 +139,8 @@ def abacus_dos_run(
 
 
 def abacus_dos_run_scf(
-    abacus_inputs_dir: Path, force_run: bool = False, note=None
+    abacus_inputs_dir: Path, force_run: bool = False, note=None,
+    work_parent: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
     Run the SCF calculation to generate the charge density file.
@@ -131,6 +150,7 @@ def abacus_dos_run_scf(
         abacus_inputs_dir: Path to the ABACUS input files, which contains the INPUT, STRU, KPT, and pseudopotential or orbital files.
         force_run: If True, it will run the SCF calculation even if the charge file already exists.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the purpose-named ``scf`` stage.
 
     Returns:
         Dict[str, Any]: A dictionary containing the work path, normal end status, SCF steps, convergence status, and energies.
@@ -142,7 +162,11 @@ def abacus_dos_run_scf(
         print("Charge file already exists, skipping SCF calculation.")
         work_path = abacus_inputs_dir
     else:
-        work_path = generate_work_path(note=note)
+        work_path = (
+            generate_work_path(note=note)
+            if work_parent is None
+            else generate_stage_path("scf", parent=work_parent)
+        )
         link_abacusjob(src=abacus_inputs_dir, dst=work_path, copy_files=["INPUT"])
 
         input_param = ReadInput(os.path.join(work_path, "INPUT"))
@@ -164,7 +188,8 @@ def abacus_dos_run_scf(
 
 
 def abacus_dos_run_nscf(
-    abacus_inputs_dir: Path, dos_edelta_ev: float = None, dos_sigma: float = None, note=None
+    abacus_inputs_dir: Path, dos_edelta_ev: float = None, dos_sigma: float = None,
+    note=None, work_parent: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """
     Run the NSCF step for DOS/PDOS generation.
@@ -174,11 +199,16 @@ def abacus_dos_run_nscf(
         dos_edelta_ev: Step size in writing Density of States (DOS) in eV.
         dos_sigma: Width of the Gaussian factor for smeared DOS in eV.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the purpose-named ``nscf`` stage.
 
     Returns:
         Dict[str, Any]: A dictionary containing the NSCF work path and normal-end status.
     """
-    work_path = generate_work_path(note=note)
+    work_path = (
+        generate_work_path(note=note)
+        if work_parent is None
+        else generate_stage_path("nscf", parent=work_parent)
+    )
     link_abacusjob(
         src=abacus_inputs_dir,
         dst=work_path,
@@ -224,6 +254,7 @@ def plot_write_dos_pdos(
     dos_emin_ev: float = -10.0,
     dos_emax_ev: float = 5.0,
     note=None,
+    work_parent: Optional[Path] = None,
 ) -> Tuple[List[str], List[str]]:
     """
     Plot DOS, PDOS and write data used in plotting to files using SCF and NSCF job directories from abacus_dos_run.
@@ -241,8 +272,14 @@ def plot_write_dos_pdos(
         dos_emin_ev (float): Minimum energy for DOS and PDOS plots.
         dos_emax_ev (float): Maximum energy for DOS and PDOS plots.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the purpose-named
+            ``postprocess`` stage.
     """
-    work_path = generate_work_path(note=note)
+    work_path = (
+        generate_work_path(note=note)
+        if work_parent is None
+        else generate_stage_path("postprocess", parent=work_parent)
+    )
     
     input_param = ReadInput(os.path.join(nscf_job_path, "INPUT"))
     basis_type = input_param.get("basis_type", "pw")

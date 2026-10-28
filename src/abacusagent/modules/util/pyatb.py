@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Any, Literal, Union, Optional
 from abacusagent.modules.util.comm import (
+    generate_stage_path,
     generate_work_path, 
     link_abacusjob, 
     run_abacus, 
@@ -52,11 +53,24 @@ def generate_input_chern_compatible(
     )
 
 
+def _property_work_path(note, work_parent) -> Path:
+    """Allocate the property stage under an explicit parent when provided."""
+
+    if work_parent is None:
+        return Path(
+            generate_work_path(note=note, fallback_name="property_calculation_scf")
+        ).absolute()
+    if not note or not str(note).strip():
+        raise ValueError("property stage note must be non-empty with work_parent")
+    return Path(generate_stage_path(str(note), parent=work_parent)).absolute()
+
+
 def property_calculation_scf(
     abacus_inputs_path: Path,
     mode: Literal["nscf", "pyatb", "auto"] = "auto",
     always_run: bool = False,
     note=None,
+    work_parent=None,
 ):
     """Perform the SCF calculation for property calculations like DOS or band structure.
 
@@ -68,6 +82,8 @@ def property_calculation_scf(
             auto: automatically determine the mode based on the input parameters. If basis is LCAO, use "pyatb", otherwise use "nscf".
         always_run (bool): Whether to always run the SCF calculation, even if the required output files already exist.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent for the purpose-named property
+            stage. When provided, ``note`` is used as the stage directory name.
 
     Returns:
         Dict[str, Any]: A dictionary containing the work path, normal end status, SCF steps, convergence status, and energies.
@@ -92,7 +108,7 @@ def property_calculation_scf(
         else:
             raise ValueError(f"Invalid mode: {mode}. Use 'nscf', 'pyatb', or 'auto'.")
         
-        work_path = Path(generate_work_path(note=note)).absolute()
+        work_path = _property_work_path(note, work_parent)
         link_abacusjob(src=abacus_inputs_path,
                        dst=work_path,
                        copy_files=["INPUT", "STRU", "KPT"])
@@ -115,7 +131,7 @@ def property_calculation_scf(
             if basis_type == "pw" and mode == "pyatb":
                 raise ValueError("Pyatb mode is not supported for PW basis. Please use 'nscf' mode instead.")
 
-            work_path = Path(generate_work_path(note=note)).absolute()
+            work_path = _property_work_path(note, work_parent)
             link_abacusjob(src=abacus_inputs_path,
                            dst=work_path,
                            copy_files=["INPUT", "STRU", "KPT"])

@@ -6,6 +6,7 @@ from abacustest.lib_prepare.abacus import AbacusStru, ReadInput, WriteInput, Wri
 
 from abacusagent.modules.util.comm import (
     collect_metrics,
+    generate_stage_path,
     generate_work_path,
     has_chgfile,
     has_pyatb_matrix_files,
@@ -41,6 +42,7 @@ def _stage_band_inputs(
     abacus_inputs_dir: Path,
     input_params: dict,
     note=None,
+    work_parent=None,
 ) -> Path:
     """Create a private band input copy with reusable outputs isolated.
 
@@ -50,8 +52,12 @@ def _stage_band_inputs(
     operation from changing the exact prepared directory handed off by an
     upstream tool while retaining existing SCF/matrix artifacts.
     """
-    staging_note = f"{note}-band-inputs" if note else None
-    staging_dir = Path(generate_work_path(note=staging_note)).absolute()
+    legacy_note = f"{note}-band-inputs" if note else None
+    staging_dir = Path(
+        generate_work_path(note=legacy_note)
+        if work_parent is None
+        else generate_stage_path("inputs", parent=work_parent)
+    ).absolute()
     source_stru_path = _resolve_band_stru_path(abacus_inputs_dir, input_params)
     source_kpt_path = None
     if "kpoint_file" in input_params:
@@ -421,6 +427,7 @@ def abacus_cal_band(abacus_inputs_dir: Path,
                     energy_max: float = 10,
                     insert_point_nums: int = 30,
                     note=None,
+                    work_parent=None,
 ) -> Dict[str, float|str]:
     """
     Calculate band using ABACUS based on prepared directory containing the INPUT, STRU, KPT, and pseudopotential or orbital files.
@@ -447,6 +454,8 @@ def abacus_cal_band(abacus_inputs_dir: Path,
         energy_max (float): Upper bound of $E - E_F$ in the plotted band.
         insert_point_nums (int): Number of points to insert between two high symmetry points. Default is 30.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
+        work_parent: Optional explicit parent. When provided, the library creates
+            purpose-named ``inputs`` and ``band`` stages below it.
     Returns:
         A dictionary containing band gap, path to the work directory for calculating band and path to the plotted band.
     Raises:
@@ -455,7 +464,7 @@ def abacus_cal_band(abacus_inputs_dir: Path,
         abacus_inputs_dir = Path(abacus_inputs_dir).absolute()
         input_params = ReadInput(os.path.join(abacus_inputs_dir, "INPUT"))
         band_inputs_dir = _stage_band_inputs(
-            abacus_inputs_dir, input_params, note=note
+            abacus_inputs_dir, input_params, note=note, work_parent=work_parent
         )
         # Use only the normalized selectors from the private copy below.  In
         # particular, an upstream absolute ``kpt_file`` must never be used as
@@ -502,11 +511,16 @@ def abacus_cal_band(abacus_inputs_dir: Path,
             elif has_chgfile(band_inputs_dir):
                 calculation_mode = "nscf"
         
+        scf_kwargs = {
+            "always_run": False,
+            "note": note if work_parent is None else "band",
+        }
+        if work_parent is not None:
+            scf_kwargs["work_parent"] = work_parent
         scf_output = property_calculation_scf(
             band_inputs_dir,
             calculation_mode,
-            always_run=False,
-            note=note,
+            **scf_kwargs,
         )
         work_path, mode = scf_output["work_path"], scf_output["mode"]
         if mode == 'pyatb':
