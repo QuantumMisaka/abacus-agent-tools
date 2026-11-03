@@ -311,10 +311,15 @@ def write_pyatb_input(band_calc_path: Path):
         'fermi_energy': efermi,
         'HR_route': f"OUT.{suffix}/data-HR-sparse_SPIN0.csr",
         'SR_route': f"OUT.{suffix}/data-SR-sparse_SPIN0.csr",
-        'rR_route': f"OUT.{suffix}/data-rR-sparse.csr",
         "HR_unit":  "Ry",
         "rR_unit": "Bohr"
     }
+    # BAND_STRUCTURE is not in PyATB's need_rR_matrix list, so a reused SCF may
+    # legitimately have no position matrix. Only advertise the route when the
+    # file exists instead of pointing at a missing path.
+    rR_rel = f"OUT.{suffix}/data-rR-sparse.csr"
+    if os.path.isfile(os.path.join(band_calc_path, rR_rel)):
+        input_parameters['rR_route'] = rR_rel
     if nspin == 2:
         input_parameters['HR_route'] += f' OUT.{suffix}/data-HR-sparse_SPIN1.csr'
         input_parameters['SR_route'] += f' OUT.{suffix}/data-SR-sparse_SPIN1.csr'
@@ -520,6 +525,9 @@ def abacus_cal_band(abacus_inputs_dir: Path,
         scf_output = property_calculation_scf(
             band_inputs_dir,
             calculation_mode,
+            # BAND_STRUCTURE reads only H(R)/S(R); demanding rR here re-runs the
+            # whole SCF just to materialize an unused matrix.
+            required_matrix="hs",
             **scf_kwargs,
         )
         work_path, mode = scf_output["work_path"], scf_output["mode"]

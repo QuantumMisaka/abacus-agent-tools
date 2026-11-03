@@ -384,25 +384,44 @@ def has_chgfile(abacus_jobpath:Path) -> bool:
     return os.path.isfile(chgfile)
 
 
-def has_pyatb_matrix_files(work_path: Path) -> bool:
+def has_pyatb_matrix_files(work_path: Path, required: str = "hsr") -> bool:
     """
-    Check if the necessary files for Pyatb calculation exist in the given work path.
-    
+    Check whether the PyATB matrices a caller needs already exist.
+
+    ``required`` names the matrix set the target function block consumes:
+
+    * ``"hs"``  — Hamiltonian and overlap only (``BAND_STRUCTURE`` and other
+      blocks outside PyATB's ``need_rR_matrix`` list);
+    * ``"hsr"`` — additionally the real-space position matrix (the default and
+      the historical behaviour).
+
+    Demanding ``rR`` for a block that never reads it forces a full SCF re-run
+    just to materialize an unused file.
+
     Parameters:
         work_path (Path): The path to the working directory.
-        
+        required (str): ``"hs"`` or ``"hsr"``.
+
     Returns:
-        bool: True if the necessary files exist, False otherwise.
+        bool: True if the required files exist, False otherwise.
     """
+    if required not in {"hs", "hsr"}:
+        raise ValueError(f"required must be 'hs' or 'hsr', got {required!r}")
+
     input_file = os.path.join(work_path, "INPUT")
     if not os.path.isfile(input_file):
         suffix = "ABACUS"
     else:
         suffix = ReadInput(input_file).get("suffix", "ABACUS")
-        
-    return (os.path.isfile(os.path.join(work_path, "OUT." + suffix, "data-HR-sparse_SPIN0.csr")) and
-            os.path.isfile(os.path.join(work_path, "OUT." + suffix, "data-SR-sparse_SPIN0.csr")) and 
-            os.path.isfile(os.path.join(work_path, "OUT." + suffix, "data-rR-sparse.csr")))
+
+    out_dir = os.path.join(work_path, "OUT." + suffix)
+    has_hs = (
+        os.path.isfile(os.path.join(out_dir, "data-HR-sparse_SPIN0.csr"))
+        and os.path.isfile(os.path.join(out_dir, "data-SR-sparse_SPIN0.csr"))
+    )
+    if required == "hs":
+        return has_hs
+    return has_hs and os.path.isfile(os.path.join(out_dir, "data-rR-sparse.csr"))
     
 def get_relax_precision(relax_precision: str = "medium"):
     """

@@ -69,6 +69,7 @@ def property_calculation_scf(
     abacus_inputs_path: Path,
     mode: Literal["nscf", "pyatb", "auto"] = "auto",
     always_run: bool = False,
+    required_matrix: str = "hsr",
     note=None,
     work_parent=None,
 ):
@@ -81,6 +82,10 @@ def property_calculation_scf(
             pyatb: run SCF with out_mat_r and out_mat_hs2 = 1, then calculate properties using Pyatb.
             auto: automatically determine the mode based on the input parameters. If basis is LCAO, use "pyatb", otherwise use "nscf".
         always_run (bool): Whether to always run the SCF calculation, even if the required output files already exist.
+        required_matrix (str): Matrix set the downstream function block reads: ``"hs"`` for
+            Hamiltonian/overlap only (e.g. ``BAND_STRUCTURE``), ``"hsr"`` when the position
+            matrix is also consumed. Defaults to ``"hsr"`` so callers that do not state a
+            narrower requirement keep the historical behaviour.
         note: Optional task label used to name generated work directories. Agent-facing wrappers must pass a non-empty note; None is kept for backward-compatible internal calls.
         work_parent: Optional explicit parent for the purpose-named property
             stage. When provided, ``note`` is used as the stage directory name.
@@ -91,6 +96,10 @@ def property_calculation_scf(
 
     input_param = ReadInput(os.path.join(abacus_inputs_path, 'INPUT'))
     basis_type = input_param.get("basis_type", "pw").lower()
+    if required_matrix not in {"hs", "hsr"}:
+        raise ValueError(
+            f"Invalid required_matrix: {required_matrix}. Use 'hs' or 'hsr'."
+        )
 
     if always_run:
         if mode == 'auto':
@@ -115,7 +124,10 @@ def property_calculation_scf(
         WriteInput(input_param, os.path.join(work_path, 'INPUT'))
         run_abacus(work_path, "abacus.log")
     else:
-        if (mode in ["pyatb", "auto"] and has_pyatb_matrix_files(abacus_inputs_path)):
+        if (
+            mode in ["pyatb", "auto"]
+            and has_pyatb_matrix_files(abacus_inputs_path, required=required_matrix)
+        ):
             print("Matrix files already exist, skipping SCF calculation.")
             work_path = abacus_inputs_path
         elif (mode in ["nscf", "auto"] and has_chgfile(abacus_inputs_path)):

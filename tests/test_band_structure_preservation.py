@@ -79,11 +79,12 @@ def test_band_auto_path_stages_magnetic_cell_and_keeps_upstream_stru(
     work_path.mkdir()
     seen = {}
 
-    def fake_scf(abacus_inputs_dir, mode, always_run=False, note=None):
+    def fake_scf(abacus_inputs_dir, mode, always_run=False, required_matrix="hsr", note=None):
         seen.update(
             inputs_dir=Path(abacus_inputs_dir),
             mode=mode,
             always_run=always_run,
+            required_matrix=required_matrix,
             note=note,
         )
         return {"work_path": work_path, "mode": "nscf"}
@@ -151,11 +152,12 @@ def test_band_explicit_path_bypasses_seekpath_and_normalizes_custom_inputs(
 
     monkeypatch.setattr(band.AbacusStru, "ReadStru", fail_if_seekpath_is_used)
 
-    def fake_scf(abacus_inputs_dir, mode, always_run=False, note=None):
+    def fake_scf(abacus_inputs_dir, mode, always_run=False, required_matrix="hsr", note=None):
         seen.update(
             inputs_dir=Path(abacus_inputs_dir),
             mode=mode,
             always_run=always_run,
+            required_matrix=required_matrix,
             note=note,
         )
         return {"work_path": work_path, "mode": "nscf"}
@@ -202,7 +204,7 @@ def test_band_auto_path_reads_custom_stru_from_staging(tmp_path, monkeypatch):
     work_path.mkdir()
     seen = {}
 
-    def fake_scf(abacus_inputs_dir, mode, always_run=False, note=None):
+    def fake_scf(abacus_inputs_dir, mode, always_run=False, required_matrix="hsr", note=None):
         seen.update(inputs_dir=Path(abacus_inputs_dir), mode=mode)
         return {"work_path": work_path, "mode": "nscf"}
 
@@ -247,11 +249,12 @@ def test_band_auto_path_selects_reusable_matrix_outputs_in_private_copy(
     work_path.mkdir()
     seen = {}
 
-    def fake_scf(abacus_inputs_dir, mode, always_run=False, note=None):
+    def fake_scf(abacus_inputs_dir, mode, always_run=False, required_matrix="hsr", note=None):
         seen.update(
             inputs_dir=Path(abacus_inputs_dir),
             mode=mode,
             always_run=always_run,
+            required_matrix=required_matrix,
             note=note,
         )
         return {"work_path": Path(abacus_inputs_dir), "mode": mode}
@@ -270,6 +273,8 @@ def test_band_auto_path_selects_reusable_matrix_outputs_in_private_copy(
     assert result["band_calc_dir"] == staged.absolute()
     assert seen["mode"] == "pyatb"
     assert seen["always_run"] is False
+    # BAND_STRUCTURE 只读 H/S：要求 rR 会让一次已完成的 SCF 被整体重算。
+    assert seen["required_matrix"] == "hs"
     assert (staged / "OUT.ABACUS").is_dir()
     assert not (staged / "OUT.ABACUS").is_symlink()
     for name, content in matrix_files.items():
@@ -286,7 +291,7 @@ def test_band_auto_path_keeps_nonmagnetic_input_compatible(tmp_path, monkeypatch
     work_path.mkdir()
     seen = {}
 
-    def fake_scf(abacus_inputs_dir, mode, always_run=False, note=None):
+    def fake_scf(abacus_inputs_dir, mode, always_run=False, required_matrix="hsr", note=None):
         seen.update(inputs_dir=Path(abacus_inputs_dir), mode=mode)
         return {"work_path": work_path, "mode": "pyatb"}
 
@@ -378,7 +383,7 @@ def test_band_staging_writes_kpoint_file_not_kpt_file(tmp_path, monkeypatch):
     work_path.mkdir()
     seen = {}
 
-    def fake_scf(abacus_inputs_dir, mode, always_run=False, note=None):
+    def fake_scf(abacus_inputs_dir, mode, always_run=False, required_matrix="hsr", note=None):
         seen.update(inputs_dir=Path(abacus_inputs_dir), mode=mode)
         return {"work_path": work_path, "mode": "nscf"}
 

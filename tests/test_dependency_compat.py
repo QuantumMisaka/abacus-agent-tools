@@ -145,7 +145,7 @@ def test_jdos_submodule_accepts_and_forwards_note(monkeypatch, tmp_path):
     calls = []
 
     def fake_property_calculation_scf(
-        abacus_inputs_path, mode, note=None, work_parent=None
+        abacus_inputs_path, mode, required_matrix="hsr", note=None, work_parent=None
     ):
         calls.append(
             {
@@ -223,7 +223,7 @@ def test_band_submodule_accepts_and_forwards_note(monkeypatch, tmp_path):
         def ReadStru(path):
             return FakeStru()
 
-    def fake_property_calculation_scf(abacus_inputs_dir, mode, always_run=False, note=None):
+    def fake_property_calculation_scf(abacus_inputs_dir, mode, always_run=False, required_matrix="hsr", note=None):
         calls.append(
             {
                 "path": abacus_inputs_dir,
