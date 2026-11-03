@@ -45,7 +45,7 @@ def test_dos_scf_stage_uses_work_parent(tmp_path: Path, monkeypatch):
 
     inputs = _write_inputs(tmp_path / "inputs")
     parent = tmp_path / "GaN" / "PBE_dos_run"
-    monkeypatch.setattr(dos, "has_chgfile", lambda _path: False)
+    monkeypatch.setattr(dos, "_dos_charge_source", lambda _path, _params: None)
     monkeypatch.setattr(
         dos,
         "link_abacusjob",

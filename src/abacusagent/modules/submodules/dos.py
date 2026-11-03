@@ -16,8 +16,37 @@ from abacusagent.modules.util.comm import (
     generate_work_path,
     link_abacusjob,
     run_abacus,
-    has_chgfile,
 )
+
+
+def _dos_charge_dir(job_path: Path, input_params: dict) -> Path:
+    """Resolve the directory ABACUS will read for ``init_chg=file``."""
+    suffix = str(input_params.get("suffix", "ABACUS"))
+    read_dir = input_params.get("read_file_dir")
+    if read_dir is None or str(read_dir).strip().lower() in ("", "auto"):
+        read_dir = f"OUT.{suffix}"
+    path = Path(str(read_dir))
+    return path if path.is_absolute() else Path(job_path) / path
+
+
+def _dos_charge_source(job_path: Path, input_params: dict) -> Optional[Path]:
+    """Prefer the completed SCF's own output, then an explicit read directory."""
+    suffix = str(input_params.get("suffix", "ABACUS"))
+    try:
+        nspin = int(input_params.get("nspin", 1))
+    except (TypeError, ValueError):
+        return None
+    if nspin not in (1, 2):
+        return None
+    output = Path(job_path) / f"OUT.{suffix}"
+    explicit = _dos_charge_dir(job_path, input_params)
+    for directory in (output, explicit):
+        if (directory / f"{suffix}-CHARGE-DENSITY.restart").is_file():
+            return directory
+        if all((directory / f"SPIN{spin}_CHG.cube").is_file()
+               for spin in range(1, nspin + 1)):
+            return directory
+    return None
 
 
 
@@ -158,7 +187,7 @@ def abacus_dos_run_scf(
 
     input_param = ReadInput(os.path.join(abacus_inputs_dir, "INPUT"))
     # check if charge file has been generated
-    if has_chgfile(abacus_inputs_dir) and not force_run:
+    if _dos_charge_source(abacus_inputs_dir, input_param) is not None and not force_run:
         print("Charge file already exists, skipping SCF calculation.")
         work_path = abacus_inputs_dir
     else:
@@ -221,6 +250,18 @@ def abacus_dos_run_nscf(
     input_param["calculation"] = "nscf"
     input_param["init_chg"] = "file"
     input_param["out_chg"] = -1
+    source_params = ReadInput(os.path.join(abacus_inputs_dir, "INPUT"))
+    charge_source = _dos_charge_source(abacus_inputs_dir, source_params)
+    default_output = Path(abacus_inputs_dir) / f"OUT.{source_params.get('suffix', 'ABACUS')}"
+    if charge_source is not None and charge_source.resolve() == default_output.resolve():
+        # link_abacusjob materializes OUT.<suffix> in the NSCF stage.
+        input_param["read_file_dir"] = f"OUT.{source_params.get('suffix', 'ABACUS')}"
+    elif charge_source is not None:
+        # Preserve an explicit source when it is outside OUT.<suffix>.
+        input_param["read_file_dir"] = str(charge_source.resolve())
+    else:
+        # A fresh SCF should have written its charge under its own OUT.
+        input_param["read_file_dir"] = f"OUT.{source_params.get('suffix', 'ABACUS')}"
     if input_param.get("basis_type", "pw") == "lcao":
         input_param["out_dos"] = 2  # only for LCAO basis, and will output DOS and PDOS
     else:
